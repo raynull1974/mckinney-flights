@@ -719,6 +719,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
 .legend span{display:flex;align-items:center;gap:4px;white-space:nowrap}
 .legend b{width:10px;height:10px;border-radius:2px;display:inline-block}
 .leaflet-container{background:var(--bg);font:inherit}
+.dark-tiles{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5)}
 .leaflet-control-attribution{background:rgba(11,17,24,.7)!important;color:var(--dim)!important}
 .leaflet-control-attribution a{color:var(--dim)!important}
 @media (orientation:portrait),(max-width:760px){
@@ -764,7 +765,10 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
   // Home point: McKinney, TX. Change these to move the map.
   var HOME = { lat: 33.1972, lon: -96.6398 };
   var POLL_MS = 10000;
+  // Optional: your own CORS proxy (see worker.js). Leave '' to call the feeds directly.
+  var PROXY = '';
   var SOURCES = [
+    { name: 'adsb.fi', url: function (la, lo, r) { return 'https://opendata.adsb.fi/api/v2/lat/' + la + '/lon/' + lo + '/dist/' + r; } },
     { name: 'adsb.lol', url: function (la, lo, r) { return 'https://api.adsb.lol/v2/point/' + la + '/' + lo + '/' + r; } },
     { name: 'airplanes.live', url: function (la, lo, r) { return 'https://api.airplanes.live/v2/point/' + la + '/' + lo + '/' + r; } }
   ];
@@ -778,6 +782,8 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
     { max: 1e9, c: '#9aa6ff', t: '30k+' }
   ];
 
+  if (PROXY) SOURCES.unshift({ name: 'proxy', url: function (la, lo, r) { return PROXY.replace(/\/$/, '') + '/v2/point/' + la + '/' + lo + '/' + r; } });
+
   function store(k, v) {
     try { if (v === undefined) return localStorage.getItem('skies.' + k); localStorage.setItem('skies.' + k, v); } catch (e) { return null; }
   }
@@ -790,6 +796,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
   var routes = {};      // callsign -> route text or ''
   var srcIdx = 0;
   var lastOk = 0;
+  var lastErr = '';
 
   var $ = function (id) { return document.getElementById(id); };
   window.addEventListener('error', function (e) { setStatus('Page error: ' + (e.message || 'unknown'), true); });
@@ -799,9 +806,9 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
   $('legend').innerHTML = BANDS.map(function (b) { return '<span><b style="background:' + b.c + '"></b>' + b.t + '</span>'; }).join('');
 
   var map = L.map('map', { zoomControl: false }).setView([HOME.lat, HOME.lon], 10);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    subdomains: 'abcd', maxZoom: 18,
-    attribution: '© OpenStreetMap contributors © CARTO · flights: adsb.lol (ODbL)'
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18, className: 'dark-tiles',
+    attribution: '© OpenStreetMap contributors · flights: adsb.lol (ODbL), adsb.fi'
   }).addTo(map);
   L.circleMarker([HOME.lat, HOME.lon], { radius: 5, color: '#fff', weight: 2, fillColor: '#ffb020', fillOpacity: 1 }).addTo(map);
   var ring = L.circle([HOME.lat, HOME.lon], { radius: radius * 1852, color: '#ffb020', weight: 1, opacity: .45, dashArray: '4 6', fill: false, interactive: false }).addTo(map);
@@ -965,9 +972,10 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
         srcIdx = tryIdx; lastOk = Date.now();
         update(j.ac || j.aircraft || []);
         setStatus('Updated ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) + ' · ' + s.name, false);
-      }).catch(function () {
+      }).catch(function (e) {
+        lastErr = (e && e.message) || String(e);
         if (n + 1 < SOURCES.length) { tryIdx = (tryIdx + 1) % SOURCES.length; return attempt(n + 1); }
-        setStatus(lastOk ? 'Feed unreachable, showing last known positions' : "Can't reach flight feeds, retrying", true);
+        setStatus(lastOk ? 'Feed unreachable, showing last known positions' : "Can't reach flight feeds (" + (lastErr || 'blocked') + '), retrying', true);
       });
     }
     attempt(0).then(function () { setTimeout(poll, POLL_MS); });
