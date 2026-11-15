@@ -847,6 +847,8 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   var lastOk = 0;
   var lastErr = '';
   var primaryRetryAt = 0;
+  var viaFeed = '', pollErrs = [];
+  function srcTimeout(s) { return s.name === 'proxy' ? 12000 : 8000; }   // the proxy may try three feeds in turn
 
   var $ = function (id) { return document.getElementById(id); };
   window.addEventListener('error', function (e) { setStatus('Page error: ' + (e.message || 'unknown'), true); });
@@ -1090,7 +1092,13 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
     var t = setTimeout(function () { if (ctl) ctl.abort(); }, ms);
     return fetch(url, ctl ? { signal: ctl.signal } : {}).then(function (r) {
       clearTimeout(t);
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (!r.ok) {
+        // The proxy explains a 502 with what each upstream feed answered.
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          throw new Error(j && j.tried ? j.tried.join(', ') : 'HTTP ' + r.status);
+        });
+      }
+      viaFeed = r.headers.get('X-Feed') || '';
       return r.json();
     }, function (e) { clearTimeout(t); throw e; });
   }
@@ -1099,19 +1107,23 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
     if (document.hidden) { setTimeout(poll, POLL_MS); return; }
     // Go back to the first source (the proxy) once a minute instead of staying on a fallback for good.
     var tryIdx = (srcIdx !== 0 && Date.now() >= primaryRetryAt) ? 0 : srcIdx;
+    pollErrs = [];
     function attempt(n) {
       var s = SOURCES[tryIdx];
       if (tryIdx === 0) primaryRetryAt = Date.now() + 60000;
-      return fetchJSON(s.url(HOME.lat, HOME.lon, radius), 8000).then(function (j) {
-        srcIdx = tryIdx; lastOk = Date.now();
+      return fetchJSON(s.url(HOME.lat, HOME.lon, radius), srcTimeout(s)).then(function (j) {
+        srcIdx = tryIdx; lastOk = Date.now(); pollErrs = [];
         $('map').classList.remove('stale');
         update(j.ac || j.aircraft || []);
-        setStatus('Updated ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) + ' · ' + s.name, false);
+        setStatus('Updated ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) + ' · ' + s.name + (s.name === 'proxy' && viaFeed ? ' (' + viaFeed + ')' : ''), false);
       }).catch(function (e) {
-        lastErr = (e && e.message) || String(e);
+        lastErr = (e && e.name === 'AbortError') ? 'timed out' : ((e && e.message) || String(e));
+        pollErrs.push(s.name + ': ' + lastErr);
         if (n + 1 < SOURCES.length) { tryIdx = (tryIdx + 1) % SOURCES.length; return attempt(n + 1); }
         if (lastOk && Date.now() - lastOk > 60000) $('map').classList.add('stale');
-        setStatus(lastOk ? 'Feed unreachable, showing last known positions' : "Can't reach flight feeds (" + (lastErr || 'blocked') + '), retrying', true);
+        // Lead with the proxy's reason: it's the one that matters, the direct feeds usually fail on CORS.
+        var why = pollErrs.filter(function (x) { return x.indexOf('proxy:') === 0; })[0] || pollErrs[0] || 'blocked';
+        setStatus((lastOk ? 'Feed unreachable, showing last known positions (' : "Can't reach flight feeds (") + why + ')', true);
       });
     }
     attempt(0).then(function () { setTimeout(poll, POLL_MS); });
@@ -1127,7 +1139,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   };
   function pollOnce() {
     var s = SOURCES[srcIdx];
-    fetchJSON(s.url(HOME.lat, HOME.lon, radius), 8000).then(function (j) {
+    fetchJSON(s.url(HOME.lat, HOME.lon, radius), srcTimeout(s)).then(function (j) {
       update(j.ac || j.aircraft || []);
       setStatus('Updated ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) + ' · ' + s.name, false);
     }).catch(function () {});
