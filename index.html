@@ -720,6 +720,10 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
 .leaflet-control-attribution{font-size:10px!important;background:rgba(11,17,24,.7)!important;color:var(--dim)!important}
 .leaflet-control-attribution a{color:var(--dim)!important}
 @media (orientation:portrait),(max-width:760px){
+ header{gap:8px;padding:8px 10px}
+ h1,.count{font-size:20px}
+ select,button{padding:0 10px}
+ .status{order:9;flex-basis:100%;margin-right:0}
  #detail{left:0;right:0;top:auto;bottom:0;width:auto;max-height:55%;border-radius:14px 14px 0 0;border-width:1px 0 0;padding-bottom:calc(14px + env(safe-area-inset-bottom))}
 }
 @media (prefers-reduced-motion:reduce){.plane svg{transition:none}}
@@ -728,7 +732,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
 <body>
 <div id="app">
  <header>
-  <h1>Over McKinney</h1>
+  <h1 id="title">Over McKinney</h1>
   <span class="count" id="count">…</span>
   <span class="status" id="status">Connecting to flight feeds</span>
   <select id="radius" aria-label="Range">
@@ -739,6 +743,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   </select>
   <button id="labels" aria-pressed="true">Labels</button>
   <button id="ground" aria-pressed="false">Ground</button>
+  <button id="nearme" aria-pressed="false">Near me</button>
  </header>
  <div id="stage">
   <div id="map">
@@ -758,7 +763,8 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
 <script>
 {
   // Home point: McKinney, TX. Change these to move the map.
-  var HOME = { lat: 33.1972, lon: -96.6398 };
+  var DEFAULT_HOME = { lat: 33.1972, lon: -96.6398, name: 'McKinney' };
+  var HOME = { lat: DEFAULT_HOME.lat, lon: DEFAULT_HOME.lon };
   var POLL_MS = 10000;
   // Optional: your own CORS proxy (see worker.js). Leave '' to call the feeds directly.
   var PROXY = 'https://mckinney-flights-proxy.raynull.workers.dev';
@@ -816,7 +822,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
     maxZoom: 18, className: 'dark-tiles',
     attribution: '© OpenStreetMap contributors · flights: adsb.lol (ODbL), adsb.fi'
   }).addTo(map);
-  L.circleMarker([HOME.lat, HOME.lon], { radius: 5, color: '#fff', weight: 2, fillColor: '#ffb020', fillOpacity: 1 }).addTo(map);
+  var homeDot = L.circleMarker([HOME.lat, HOME.lon], { radius: 5, color: '#fff', weight: 2, fillColor: '#ffb020', fillOpacity: 1 }).addTo(map);
   var ring = L.circle([HOME.lat, HOME.lon], { radius: radius * 1852, color: '#ffb020', weight: 1, opacity: .45, dashArray: '4 6', fill: false, interactive: false }).addTo(map);
   map.fitBounds(ring.getBounds(), { padding: [10, 10] });
   AIRPORTS.forEach(function (a) {
@@ -1029,7 +1035,10 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   };
   function pollOnce() {
     var s = SOURCES[srcIdx];
-    fetchJSON(s.url(HOME.lat, HOME.lon, radius), 8000).then(function (j) { update(j.ac || j.aircraft || []); }).catch(function () {});
+    fetchJSON(s.url(HOME.lat, HOME.lon, radius), 8000).then(function (j) {
+      update(j.ac || j.aircraft || []);
+      setStatus('Updated ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) + ' · ' + s.name, false);
+    }).catch(function () {});
   }
   $('labels').onclick = function () {
     showLabels = !showLabels; store('labels', showLabels ? '1' : '0');
@@ -1051,6 +1060,69 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   }
   document.addEventListener('click', askWake);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) askWake(); });
+
+  // ---- Location: McKinney by default, the viewer's own spot with "Near me", or ?lat=&lon=[&name=] in the link ----
+  // The viewer's own position is rounded to 2 decimals (about 1 km) before it leaves the browser.
+  function r2(x) { return Math.round(x * 100) / 100; }
+  function clearPlanes() {
+    select(null);
+    Object.keys(planes).forEach(function (h) { map.removeLayer(planes[h].m); map.removeLayer(planes[h].trail); });
+    planes = {}; renderCount();
+  }
+  function setHome(lat, lon, name) {
+    HOME.lat = lat; HOME.lon = lon;
+    homeDot.setLatLng([HOME.lat, HOME.lon]); ring.setLatLng([HOME.lat, HOME.lon]);
+    $('title').textContent = 'Over ' + (name || 'you');
+    clearPlanes();
+    map.fitBounds(ring.getBounds(), { padding: [10, 10] });
+    clearTimeout(window._skiesT); window._skiesT = setTimeout(pollOnce, 50);
+  }
+  function placeName(lat, lon) {
+    var cached = store('me.name');
+    if (cached && store('me.at') === lat + ',' + lon) { $('title').textContent = 'Over ' + cached; return; }
+    fetchJSON('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=' + lat + '&lon=' + lon, 6000).then(function (j) {
+      var a = (j && j.address) || {};
+      var n = a.city || a.town || a.village || a.suburb || a.county;
+      if (!n || HOME.lat !== lat || HOME.lon !== lon) return;
+      store('me.name', n); store('me.at', lat + ',' + lon);
+      $('title').textContent = 'Over ' + n;
+    }).catch(function () {});
+  }
+  function useMe(lat, lon) {
+    store('me.lat', r2(lat)); store('me.lon', r2(lon));
+    setHome(r2(lat), r2(lon), 'you'); placeName(HOME.lat, HOME.lon);
+  }
+  function locate(quiet) {
+    if (!navigator.geolocation) { if (!quiet) setStatus('This browser cannot share its location', true); return; }
+    if (!quiet) setStatus('Finding you…', false);
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      if (store('mode') !== 'me') return;
+      var la = r2(pos.coords.latitude), lo = r2(pos.coords.longitude);
+      if (la !== HOME.lat || lo !== HOME.lon) useMe(la, lo);
+    }, function (e) {
+      if (quiet) return;
+      store('mode', ''); $('nearme').setAttribute('aria-pressed', 'false');
+      setStatus(e.code === 1 ? 'Location blocked. Allow it for this site in your browser settings.' : 'Could not find your location', true);
+    }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 });
+  }
+  $('nearme').onclick = function () {
+    if (store('mode') === 'me') {
+      store('mode', ''); this.setAttribute('aria-pressed', 'false');
+      setHome(DEFAULT_HOME.lat, DEFAULT_HOME.lon, DEFAULT_HOME.name);
+      return;
+    }
+    store('mode', 'me'); this.setAttribute('aria-pressed', 'true');
+    locate(false);
+  };
+
+  var q = new URLSearchParams(location.search), qla = parseFloat(q.get('lat')), qlo = parseFloat(q.get('lon'));
+  if (Math.abs(qla) <= 90 && Math.abs(qlo) <= 180) {
+    setHome(qla, qlo, (q.get('name') || '').slice(0, 40) || 'here');
+  } else if (store('mode') === 'me' && store('me.lat')) {
+    $('nearme').setAttribute('aria-pressed', 'true');
+    useMe(+store('me.lat'), +store('me.lon'));   // last known spot right away
+    locate(true);                                  // then refresh it without nagging
+  }
 
   poll();
 }
