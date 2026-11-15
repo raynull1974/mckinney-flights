@@ -679,7 +679,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
    PICTURE: dark map, planes as rotated silhouettes coloured by altitude, fading trails
    COLOUR and TYPE: night navy ground, amber accent, altitude ramp; Barlow Condensed for callsigns
    LAYOUT: map fills the screen; tapping a plane opens an info card (bottom sheet in portrait, side card in landscape) */
-:root{--bg:#0b1118;--panel:#111a24;--line:#1f2c3a;--ink:#e6edf3;--dim:#8a9bab;--acc:#ffb020;--red:#ff4d4d}
+:root{--mil:#ff5fd2;--bg:#0b1118;--panel:#111a24;--line:#1f2c3a;--ink:#e6edf3;--dim:#8a9bab;--acc:#ffb020;--red:#ff4d4d}
 *{box-sizing:border-box;min-width:0}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.4 Barlow,system-ui,sans-serif;overflow:hidden}
 #app{display:grid;height:100%;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
@@ -710,14 +710,20 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
 .apt svg{display:block}
 .apt span{position:absolute;left:24px;top:1px;font:600 14px/1 "Barlow Condensed",sans-serif;color:#cfd8e2;letter-spacing:.04em;text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap}
 .apt.minor span{font-size:12px;color:var(--dim);left:18px;top:0}
-.plane svg{display:block;transition:transform .6s linear}
+.plane svg.shape{display:block;transition:transform .6s linear}
+.plane .milbox{position:absolute;pointer-events:none}
+.plane .lbl b{color:var(--mil);font-weight:600}
+.plane.em::after{content:"";position:absolute;inset:-4px;border:2px solid var(--red);border-radius:50%;animation:pulse 1.4s ease-out infinite;pointer-events:none}
+@keyframes pulse{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.7);opacity:0}}
+.tag.mil{background:var(--mil);color:#0b1118}
 .plane .lbl{position:absolute;left:26px;top:-2px;font:600 13px/1.1 "Barlow Condensed",sans-serif;color:var(--ink);text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap;pointer-events:none}
 .plane .lbl i{font-style:normal;color:var(--dim);font-weight:500}
-.plane.sel svg{filter:drop-shadow(0 0 6px #fff)}
+.plane.sel svg.shape{filter:drop-shadow(0 0 6px #fff)}
 #map.stale .leaflet-marker-pane,#map.stale .leaflet-overlay-pane{opacity:.35}
 .legend{position:absolute;left:10px;top:10px;z-index:500;background:rgba(17,26,36,.88);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap;max-width:calc(100% - 20px)}
 .legend span{display:flex;align-items:center;gap:4px;white-space:nowrap}
 .legend b{width:10px;height:10px;border-radius:2px;display:inline-block}
+.legend b.milkey{background:none;border:2px solid var(--mil);border-radius:1px;width:11px;height:11px}
 .leaflet-container{background:var(--bg);font:inherit}
 .dark-tiles{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5)}
 .leaflet-control-attribution{font-size:10px!important;background:rgba(11,17,24,.7)!important;color:var(--dim)!important}
@@ -729,7 +735,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
  .status{order:9;flex-basis:100%;margin-right:0}
  #detail{left:0;right:0;top:auto;bottom:0;width:auto;max-height:55%;border-radius:14px 14px 0 0;border-width:1px 0 0;padding-bottom:calc(14px + env(safe-area-inset-bottom))}
 }
-@media (prefers-reduced-motion:reduce){.plane svg{transition:none}}
+@media (prefers-reduced-motion:reduce){.plane svg.shape{transition:none}.plane.em::after{animation:none;transform:scale(1.2)}}
 </style>
 </head>
 <body>
@@ -816,7 +822,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   $('radius').value = String(radius);
   $('labels').setAttribute('aria-pressed', showLabels);
   $('ground').setAttribute('aria-pressed', showGround);
-  $('legend').innerHTML = BANDS.map(function (b) { return '<span><b style="background:' + b.c + '"></b>' + b.t + '</span>'; }).join('');
+  $('legend').innerHTML = BANDS.map(function (b) { return '<span><b style="background:' + b.c + '"></b>' + b.t + '</span>'; }).join('') + '<span><b class="milkey"></b>Military</span>';
 
   var map = L.map('map', { zoomControl: false });
   map.attributionControl.setPrefix(false);
@@ -881,7 +887,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   // Where two labels would overlap, keep the one nearer home. Selected and emergency planes always keep theirs.
   function declutter() {
     var placed = [];
-    function rank(ac) { return selected === ac.hex ? 0 : (emergency(ac) ? 1 : 2); }
+    function rank(ac) { return selected === ac.hex ? 0 : (emergency(ac) || military(ac) ? 1 : 2); }
     Object.keys(planes).map(function (h) { return planes[h]; }).sort(function (a, b) {
       return rank(a.ac) - rank(b.ac) || a.ac.d - b.ac.d;
     }).forEach(function (p) {
@@ -898,9 +904,26 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
     });
   }
 
-  var PATH = 'M12 1.5c.8 0 1.3.7 1.3 1.6v5.8l8 4.7v2.1l-8-2.5v5l2.3 1.7v1.6L12 20.4l-3.6 1.1v-1.6l2.3-1.7v-5l-8 2.5v-2.1l8-4.7V3.1c0-.9.5-1.6 1.3-1.6z';
+  // Silhouettes, nose up, in a 24x24 box. Jets: swept wings. Props: straight wings. Helicopters: body, boom, rotor.
+  var SHAPES = {
+    jet: '<path d="M12 1.5c.8 0 1.3.7 1.3 1.6v5.8l8 4.7v2.1l-8-2.5v5l2.3 1.7v1.6L12 20.4l-3.6 1.1v-1.6l2.3-1.7v-5l-8 2.5v-2.1l8-4.7V3.1c0-.9.5-1.6 1.3-1.6z" FILL/>',
+    prop: '<path d="M12 1.8c1 0 1.6.9 1.6 2.1v3.6h8.2c.7 0 1.2.6 1.2 1.3v1.1c0 .7-.5 1.3-1.2 1.3h-8.2v5.9h3.1c.6 0 1 .5 1 1v.9c0 .5-.4 1-1 1h-3.3l-.5 1.4h-1.8l-.5-1.4H7.3c-.6 0-1-.5-1-1v-.9c0-.5.4-1 1-1h3.1v-5.9H2.2c-.7 0-1.2-.6-1.2-1.3V8.8c0-.7.5-1.3 1.2-1.3h8.2V3.9c0-1.2.6-2.1 1.6-2.1zM8.6.4h6.8v1.2H8.6z" FILL/>',
+    heli: '<path d="M12 4.6c2.2 0 3.9 2.4 3.9 5.4s-1.7 5.4-3.9 5.4-3.9-2.4-3.9-5.4 1.7-5.4 3.9-5.4zM11.1 14.8h1.8v5h-1.8zM8.8 19.3h6.4v2H8.8z" FILL/>' +
+          '<path d="M2.8 3.3 21.2 16.7M21.2 3.3 2.8 16.7" STROKE fill="none" stroke-width="1.1" stroke-linecap="round" opacity=".7"/>'
+  };
+  var HELI = /^(EC\d|H1[2-7]\d|H160|AS\d|B0[56]|B4\d\d|B505|B212|B214|S76|S92|S70|H60|UH|AH|CH47|CH53|MH|HH|R22|R44|R66|A10[69]|A1[13]9|A169|AW\d|BK17|MD5|MD60|EN28|EN48|G2CA|GAZL|LYNX|NH90|ALO\d)/;
+  var PROP = /^(C1[2-9]\d|C2[0-4]\d|C208|C337|C82|PA\d|P28|P32|P46|PA46|SR2|BE\d|B350|B190|M20|DA[24]|PC6|PC7|PC9|PC12|PC21|TBM|KODI|AT[4-7]|DH8|DHC|SF34|E110|E120|E314|SW[34]|JS3|D328|C130|C30J|P3|E2|C2|P180|AA5|RV\d|G58|T6|TEX2|AC\d|MU2|SAVA|GA8|AN2|L410|C212|CN35|C27J|C295|BN2|BALL|V22)/;
+  function shapeOf(ac) {
+    var t = (ac.t || '').toUpperCase();
+    if (ac.category === 'A7' || HELI.test(t)) return 'heli';
+    if (PROP.test(t)) return 'prop';
+    if (!t && ac.category === 'A1') return 'prop';   // unknown light aircraft: almost always a piston single
+    return 'jet';
+  }
+  function military(ac) { return !!(ac.dbFlags & 1); }
+
   // Icon size by aircraft type code (ac.t), then by broadcast weight class (ac.category).
-  var SIZE = { heavy: 38, narrow: 28, regional: 23, bizjet: 20, light: 17 };
+  var SIZE = { heavy: 38, narrow: 28, regional: 23, bizjet: 20, light: 19 };
   var TYPE_SIZES = [
     ['heavy', /^(B74|B76|B77|B78|A30|A310|A33|A34|A35|A38|MD11|DC10|KC10|KC46|IL76|AN12)|^(C5M|C17|B52|A400)$/],
     ['narrow', /^(B37|B38|B39|B73|B75|B71|A31[89]|A32|A20N|A21N|BCS|MD8|MD9|E29)|^(C130|C30J|P8)$/],
@@ -917,14 +940,19 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
     return t ? 'bizjet' : 'narrow';   // known type we don't list (bizjets, turboprops) vs. nothing at all
   }
   // Small icons still get a 30 px tap target; the svg sits centred in it.
-  function iconBox(ac) { var s = SIZE[sizeClass(ac)]; return { s: s, b: Math.max(s, 30) }; }
+  function iconBox(ac) { var s = SIZE[sizeClass(ac)]; if (shapeOf(ac) === 'heli') s = Math.max(s, military(ac) ? 26 : 21); return { s: s, b: Math.max(s, 30) }; }
 
   function icon(ac) {
-    var sel = selected === ac.hex, z = iconBox(ac), pad = (z.b - z.s) / 2;
-    var lbl = sel || labelled(ac) ? '<div class="lbl" style="left:' + (pad + z.s + 1) + 'px;top:' + (z.b / 2 - 15) + 'px">' + esc(cs(ac)) + '<br><i>' + altShort(ac) + '</i></div>' : '';
+    var sel = selected === ac.hex, z = iconBox(ac), pad = (z.b - z.s) / 2, mil = military(ac), em = emergency(ac);
+    var fill = em ? '#ff4d4d' : color(ac);
+    var shape = SHAPES[shapeOf(ac)].replace('FILL', 'fill="' + fill + '" stroke="#0b1118" stroke-width="1"').replace('STROKE', 'stroke="' + fill + '"');
+    // Military: steady magenta corner brackets around the aircraft (not rotated), plus MIL in the label.
+    var box = mil ? '<svg class="milbox" viewBox="0 0 24 24" width="' + (z.s + 10) + '" height="' + (z.s + 10) + '" style="left:' + (pad - 5) + 'px;top:' + (pad - 5) + 'px">' +
+      '<path d="M1.5 7V1.5H7M17 1.5h5.5V7M22.5 17v5.5H17M7 22.5H1.5V17" fill="none" stroke="#ff5fd2" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>' : '';
+    var lbl = sel || labelled(ac) || mil ? '<div class="lbl" style="left:' + (pad + z.s + (mil ? 6 : 1)) + 'px;top:' + (z.b / 2 - 15) + 'px">' + esc(cs(ac)) + '<br><i>' + altShort(ac) + (mil ? ' <b>MIL</b>' : '') + '</i></div>' : '';
     return L.divIcon({
-      className: 'plane' + (sel ? ' sel' : ''), iconSize: [z.b, z.b], iconAnchor: [z.b / 2, z.b / 2],
-      html: '<svg viewBox="0 0 24 24" width="' + z.s + '" height="' + z.s + '" style="margin:' + pad + 'px;transform:rotate(' + (ac.track || ac.true_heading || 0) + 'deg)"><path d="' + PATH + '" fill="' + (emergency(ac) ? '#ff4d4d' : color(ac)) + '" stroke="#0b1118" stroke-width="1"/></svg>' + lbl
+      className: 'plane' + (sel ? ' sel' : '') + (em ? ' em' : '') + (mil ? ' mil' : ''), iconSize: [z.b, z.b], iconAnchor: [z.b / 2, z.b / 2],
+      html: box + '<svg class="shape" viewBox="0 0 24 24" width="' + z.s + '" height="' + z.s + '" style="margin:' + pad + 'px;transform:rotate(' + (ac.track || ac.true_heading || 0) + 'deg)">' + shape + '</svg>' + lbl
     });
   }
 
@@ -990,7 +1018,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
     var route = routes[c] === undefined ? 'Looking up route…' : (routes[c] || 'Route not on file');
     el.className = 'on';
     el.innerHTML =
-      '<div class="top"><span class="big">' + esc(c) + (emergency(ac) ? '<span class="tag em">' + esc(ac.squawk || 'EMERG') + '</span>' : '') + ((ac.dbFlags & 1) ? '<span class="tag">Military</span>' : '') + '</span><button class="x" id="close" aria-label="Close">×</button></div>' +
+      '<div class="top"><span class="big">' + esc(c) + (emergency(ac) ? '<span class="tag em">' + esc(ac.squawk || 'EMERG') + '</span>' : '') + ((ac.dbFlags & 1) ? '<span class="tag mil">Military</span>' : '') + '</span><button class="x" id="close" aria-label="Close">×</button></div>' +
       '<div class="route">' + esc(route) + '</div>' +
       '<dl>' +
       '<div><dt>Altitude</dt><dd>' + altText(ac) + '</dd></div>' +
