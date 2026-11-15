@@ -675,11 +675,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
    IDEA: an approach-control scope pointed at the sky over McKinney
    PICTURE: dark map, planes as rotated silhouettes coloured by altitude, fading trails
    COLOUR and TYPE: night navy ground, amber accent, altitude ramp; Barlow Condensed for callsigns
-   LAYOUT: map fills the screen, nearest-planes list at right (bottom in portrait) */
+   LAYOUT: map fills the screen; tapping a plane opens an info card (bottom sheet in portrait, side card in landscape) */
 :root{--bg:#0b1118;--panel:#111a24;--line:#1f2c3a;--ink:#e6edf3;--dim:#8a9bab;--acc:#ffb020;--red:#ff4d4d}
 *{box-sizing:border-box;min-width:0}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.4 Barlow,system-ui,sans-serif;overflow:hidden}
-#app{display:grid;height:100%;grid-template-columns:minmax(0,1fr) 340px;grid-template-rows:auto minmax(0,1fr)}
+#app{display:grid;height:100%;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
 header{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
 h1{font:600 22px/1 "Barlow Condensed",sans-serif;margin:0}
 .count{font:600 22px/1 "Barlow Condensed",sans-serif;color:var(--acc);white-space:nowrap}
@@ -688,9 +688,9 @@ h1{font:600 22px/1 "Barlow Condensed",sans-serif;margin:0}
 select,button{font:inherit;font-size:15px;color:var(--ink);background:#18232f;border:1px solid var(--line);border-radius:8px;min-height:44px;padding:0 12px;cursor:pointer}
 button[aria-pressed=true]{border-color:var(--acc);color:var(--acc)}
 select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-#map{background:var(--bg);position:relative}
-aside{border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;overflow:hidden}
-#detail{padding:12px 16px 14px;border-bottom:1px solid var(--line);display:none}
+#stage{position:relative;overflow:hidden}
+#map{background:var(--bg);position:absolute;inset:0}
+#detail{position:absolute;z-index:1000;right:12px;top:12px;width:340px;max-height:calc(100% - 24px);overflow-y:auto;padding:12px 16px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.45);display:none}
 #detail.on{display:block}
 #detail .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 #detail .big{font:600 30px/1 "Barlow Condensed",sans-serif}
@@ -700,16 +700,8 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
 #detail dd{margin:0 0 4px;font-variant-numeric:tabular-nums;white-space:nowrap}
 #detail a{color:var(--dim);font-size:13px}
 .x{background:none;border:0;color:var(--dim);font-size:22px;min-height:44px;min-width:44px;padding:0}
-#list{overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch}
-.row{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--line);cursor:pointer}
-.row.sel{background:#1a2733}
-.dot{width:10px;height:10px;border-radius:50%}
-.cs{font:600 18px/1.1 "Barlow Condensed",sans-serif}
-.sub{color:var(--dim);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.tag{font-size:11px;padding:1px 6px;border-radius:4px;background:#2a3a4a;color:var(--ink);margin-left:6px;vertical-align:2px}
+.tag{font:500 12px/1.4 Barlow,sans-serif;padding:1px 6px;border-radius:4px;background:#2a3a4a;color:var(--ink);margin-left:8px;vertical-align:6px}
 .tag.em{background:var(--red)}
-.empty{padding:24px 16px;color:var(--dim)}
 .plane{background:none;border:0}
 .plane svg{display:block;transition:transform .6s linear}
 .plane .lbl{position:absolute;left:26px;top:-2px;font:600 13px/1.1 "Barlow Condensed",sans-serif;color:var(--ink);text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap;pointer-events:none}
@@ -724,8 +716,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
 .leaflet-control-attribution{font-size:10px!important;background:rgba(11,17,24,.7)!important;color:var(--dim)!important}
 .leaflet-control-attribution a{color:var(--dim)!important}
 @media (orientation:portrait),(max-width:760px){
- #app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) 40%}
- aside{border-left:0;border-top:1px solid var(--line)}
+ #detail{left:0;right:0;top:auto;bottom:0;width:auto;max-height:55%;border-radius:14px 14px 0 0;border-width:1px 0 0;padding-bottom:calc(14px + env(safe-area-inset-bottom))}
 }
 @media (prefers-reduced-motion:reduce){.plane svg{transition:none}}
 </style>
@@ -745,13 +736,12 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
   <button id="labels" aria-pressed="true">Labels</button>
   <button id="ground" aria-pressed="false">Ground</button>
  </header>
- <div id="map">
-  <div class="legend" id="legend"></div>
- </div>
- <aside>
+ <div id="stage">
+  <div id="map">
+   <div class="legend" id="legend"></div>
+  </div>
   <div id="detail"></div>
-  <div id="list"><div class="empty">Waiting for the first update…</div></div>
- </aside>
+ </div>
 </div>
 
 <script>/* Leaflet 1.9.4 (c) Volodymyr Agafonkin, BSD-2-Clause */
@@ -818,6 +808,8 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
   var ring = L.circle([HOME.lat, HOME.lon], { radius: radius * 1852, color: '#ffb020', weight: 1, opacity: .45, dashArray: '4 6', fill: false, interactive: false }).addTo(map);
   map.fitBounds(ring.getBounds(), { padding: [10, 10] });
   map.on('click', function () { select(null); });
+  L.DomEvent.disableClickPropagation($('detail'));
+  L.DomEvent.disableScrollPropagation($('detail'));
 
   function altNum(ac) { return ac.alt_baro === 'ground' ? 0 : (typeof ac.alt_baro === 'number' ? ac.alt_baro : (ac.alt_geom || 0)); }
   function onGround(ac) { return ac.alt_baro === 'ground'; }
@@ -911,34 +903,16 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
       if (selected === hex) select(null);
     });
     declutter();
-    renderList();
+    renderCount();
     if (selected) renderDetail();
   }
 
-  function sorted() {
-    return Object.keys(planes).map(function (h) { return planes[h].ac; }).sort(function (a, b) { return a.d - b.d; });
+
+  function renderCount() {
+    var n = Object.keys(planes).length;
+    $('count').textContent = n + (n === 1 ? ' plane' : ' planes');
   }
 
-  function renderList() {
-    var arr = sorted();
-    $('count').textContent = arr.length + (arr.length === 1 ? ' plane' : ' planes');
-    if (!arr.length) { $('list').innerHTML = '<div class="empty">No planes within ' + radius + ' nm right now.</div>'; return; }
-    $('list').innerHTML = arr.map(function (ac) {
-      var tags = (emergency(ac) ? '<span class="tag em">' + esc(ac.squawk || 'EMERG') + '</span>' : '') + ((ac.dbFlags & 1) ? '<span class="tag">Military</span>' : '');
-      return '<div class="row' + (selected === ac.hex ? ' sel' : '') + '" data-hex="' + esc(ac.hex) + '">' +
-        '<span class="dot" style="background:' + color(ac) + '"></span>' +
-        '<div><div class="cs">' + esc(cs(ac)) + tags + '</div><div class="sub">' + esc(ac.t || 'Unknown type') + (routes[cs(ac)] ? ' · ' + esc(routes[cs(ac)]) : '') + '</div></div>' +
-        '<div class="num">' + altText(ac) + '<div class="sub">' + ac.d.toFixed(1) + ' nm ' + compass(ac.b) + '</div></div></div>';
-    }).join('');
-  }
-
-  $('list').addEventListener('click', function (e) {
-    var r = e.target.closest ? e.target.closest('.row') : null;
-    if (!r) return;
-    var hex = r.getAttribute('data-hex');
-    select(hex);
-    if (planes[hex]) map.panTo(planes[hex].m.getLatLng());
-  });
 
   function select(hex) {
     var prev = selected;
@@ -946,8 +920,12 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
     [prev, hex].forEach(function (h) { if (h && planes[h]) planes[h].m.setIcon(icon(planes[h].ac)); });
     declutter();
     renderDetail();
-    renderList();
-    if (hex && planes[hex]) lookupRoute(cs(planes[hex].ac));
+    if (hex && planes[hex]) {
+      lookupRoute(cs(planes[hex].ac));
+      // Keep the plane clear of the info card (bottom sheet in portrait, side card in landscape).
+      var d = $('detail'), bottom = d.offsetTop > 40;
+      map.panInside(planes[hex].m.getLatLng(), bottom ? { paddingBottomRight: [0, d.offsetHeight + 70] } : { paddingBottomRight: [d.offsetWidth + 40, 0] });
+    }
   }
 
   function renderDetail() {
@@ -959,7 +937,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
     var route = routes[c] === undefined ? 'Looking up route…' : (routes[c] || 'Route not on file');
     el.className = 'on';
     el.innerHTML =
-      '<div class="top"><span class="big">' + esc(c) + '</span><button class="x" id="close" aria-label="Close">×</button></div>' +
+      '<div class="top"><span class="big">' + esc(c) + (emergency(ac) ? '<span class="tag em">' + esc(ac.squawk || 'EMERG') + '</span>' : '') + ((ac.dbFlags & 1) ? '<span class="tag">Military</span>' : '') + '</span><button class="x" id="close" aria-label="Close">×</button></div>' +
       '<div class="route">' + esc(route) + '</div>' +
       '<dl>' +
       '<div><dt>Altitude</dt><dd>' + altText(ac) + '</dd></div>' +
@@ -984,7 +962,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
       routes[c] = (fr.airline && fr.airline.name ? fr.airline.name + ': ' : '') +
         (o.iata_code || o.icao_code || '?') + ' → ' + (d.iata_code || d.icao_code || '?') +
         (d.municipality ? ' (' + d.municipality + ')' : '');
-    }).catch(function () { routes[c] = ''; }).then(function () { renderDetail(); renderList(); });
+    }).catch(function () { routes[c] = ''; }).then(function () { renderDetail(); });
   }
 
   function fetchJSON(url, ms) {
