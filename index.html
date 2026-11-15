@@ -736,6 +736,12 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
 .leaflet-container a.leaflet-popup-close-button{color:var(--dim)}
 .legend span{display:flex;align-items:center;gap:4px;white-space:nowrap}
 .legend b{width:10px;height:10px;border-radius:2px;display:inline-block}
+.legend .ramp{flex-basis:100%;width:250px;min-width:250px}
+.legend .ramp i{display:block;height:8px;border-radius:4px;margin:2px 4px 2px}
+.legend .ramp div{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums;line-height:1.1}
+.legend .ramp div span{width:0;display:flex;justify-content:center;white-space:nowrap}
+.legend .ramp div span:first-child{justify-content:flex-start;margin-left:4px}
+.legend .ramp div span:last-child{justify-content:flex-end;margin-right:4px}
 .legend b.milkey{background:none;border:2px solid var(--mil);border-radius:1px;width:11px;height:11px}
 .leaflet-container{background:var(--bg);font:inherit}
 .dark-tiles{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5)}
@@ -813,14 +819,16 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
     { id: 'ADS', lat: 32.9686, lon: -96.8364, major: false },
     { id: 'AFW', lat: 32.9876, lon: -97.3188, major: false }
   ];
-  var BANDS = [
-    { max: 0, c: '#7d8a96', t: 'Ground' },
-    { max: 2000, c: '#ff6b3d', t: '<2k' },
-    { max: 6000, c: '#ffb020', t: '2–6k' },
-    { max: 12000, c: '#f2e94e', t: '6–12k' },
-    { max: 20000, c: '#5fd38d', t: '12–20k' },
-    { max: 30000, c: '#3cc4e6', t: '20–30k' },
-    { max: 1e9, c: '#9aa6ff', t: '30k+' }
+  // Altitude colour scale: colours blend smoothly between these stops (feet). Ground is its own grey.
+  var GROUND_C = '#7d8a96';
+  var STOPS = [
+    { ft: 0, c: '#ff6b3d', t: '0' },
+    { ft: 2000, c: '#ffb020', t: '2k' },
+    { ft: 6000, c: '#f2e94e', t: '6k' },
+    { ft: 12000, c: '#5fd38d', t: '12k' },
+    { ft: 20000, c: '#3cc4e6', t: '20k' },
+    { ft: 30000, c: '#9aa6ff', t: '30k' },
+    { ft: 40000, c: '#b48cff', t: '40k+' }
   ];
 
   if (PROXY) SOURCES.unshift({ name: 'proxy', url: function (la, lo, r) { return PROXY.replace(/\/$/, '') + '/v2/point/' + la + '/' + lo + '/' + r; } });
@@ -845,7 +853,11 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   $('radius').value = String(radius);
   $('labels').setAttribute('aria-pressed', showLabels);
   $('ground').setAttribute('aria-pressed', showGround);
-  $('legend').innerHTML = BANDS.map(function (b) { return '<span><b style="background:' + b.c + '"></b>' + b.t + '</span>'; }).join('') + '<span><b class="milkey"></b>Military</span>' +
+  // Stops sit evenly along the bar (the scale is stretched at low altitude, where most of the detail is).
+  $('legend').innerHTML = '<div class="ramp"><i style="background:linear-gradient(90deg,' +
+      STOPS.map(function (s, i) { return s.c + ' ' + (i / (STOPS.length - 1) * 100).toFixed(1) + '%'; }).join(',') + ')"></i>' +
+      '<div>' + STOPS.map(function (s) { return '<span>' + s.t + '</span>'; }).join('') + '</div></div>' +
+      '<span><b style="background:' + GROUND_C + '"></b>Ground</span><span><b class="milkey"></b>Military</span>' +
     '<span class="windkey" id="windkey"></span><span class="wxkey"><b class="warn" style="border-color:#ff3b3b"></b>Tornado warning</span><span class="wxkey"><b class="warn" style="border-color:#ffd23f"></b>Severe storm</span><span class="wxkey"><b class="warn" style="border-color:#3ddc84"></b>Flash flood</span>';
 
   var map = L.map('map', { zoomControl: false });
@@ -875,11 +887,14 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
 
   function altNum(ac) { return ac.alt_baro === 'ground' ? 0 : (typeof ac.alt_baro === 'number' ? ac.alt_baro : (ac.alt_geom || 0)); }
   function onGround(ac) { return ac.alt_baro === 'ground'; }
+  function hex2rgb(c) { var n = parseInt(c.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+  STOPS.forEach(function (s) { s.rgb = hex2rgb(s.c); });
   function color(ac) {
-    if (onGround(ac)) return BANDS[0].c;
-    var a = altNum(ac);
-    for (var i = 1; i < BANDS.length; i++) if (a < BANDS[i].max) return BANDS[i].c;
-    return BANDS[BANDS.length - 1].c;
+    if (onGround(ac)) return GROUND_C;
+    var a = Math.max(0, altNum(ac)), i = 1;
+    while (i < STOPS.length - 1 && a > STOPS[i].ft) i++;
+    var lo = STOPS[i - 1], hi = STOPS[i], t = Math.min(1, Math.max(0, (a - lo.ft) / (hi.ft - lo.ft)));
+    return 'rgb(' + lo.rgb.map(function (v, k) { return Math.round(v + (hi.rgb[k] - v) * t); }).join(',') + ')';
   }
   function rad(d) { return d * Math.PI / 180; }
   function distNm(la, lo) {
