@@ -843,10 +843,19 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
   function emergency(ac) { return ac.squawk === '7500' || ac.squawk === '7600' || ac.squawk === '7700' || (ac.emergency && ac.emergency !== 'none'); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
+  // Low traffic (under 2k ft or on the ground) only gets labels once you zoom in. Emergencies always do.
+  var LOW_ALT = 2000, LABEL_ZOOM = 11;
+  function labelled(ac) {
+    if (!showLabels) return false;
+    if (emergency(ac)) return true;
+    return (!onGround(ac) && altNum(ac) >= LOW_ALT) || map.getZoom() >= LABEL_ZOOM;
+  }
+  function relabel() { Object.keys(planes).forEach(function (h) { planes[h].m.setIcon(icon(planes[h].ac)); }); }
+
   var PATH = 'M12 1.5c.8 0 1.3.7 1.3 1.6v5.8l8 4.7v2.1l-8-2.5v5l2.3 1.7v1.6L12 20.4l-3.6 1.1v-1.6l2.3-1.7v-5l-8 2.5v-2.1l8-4.7V3.1c0-.9.5-1.6 1.3-1.6z';
   function icon(ac) {
     var sel = selected === ac.hex;
-    var lbl = showLabels || sel ? '<div class="lbl">' + esc(cs(ac)) + '<br><i>' + altShort(ac) + '</i></div>' : '';
+    var lbl = sel || labelled(ac) ? '<div class="lbl">' + esc(cs(ac)) + '<br><i>' + altShort(ac) + '</i></div>' : '';
     return L.divIcon({
       className: 'plane' + (sel ? ' sel' : ''), iconSize: [26, 26], iconAnchor: [13, 13],
       html: '<svg viewBox="0 0 24 24" width="26" height="26" style="transform:rotate(' + (ac.track || ac.true_heading || 0) + 'deg)"><path d="' + PATH + '" fill="' + (emergency(ac) ? '#ff4d4d' : color(ac)) + '" stroke="#0b1118" stroke-width="1"/></svg>' + lbl
@@ -997,8 +1006,9 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
   $('labels').onclick = function () {
     showLabels = !showLabels; store('labels', showLabels ? '1' : '0');
     this.setAttribute('aria-pressed', showLabels);
-    Object.keys(planes).forEach(function (h) { planes[h].m.setIcon(icon(planes[h].ac)); });
+    relabel();
   };
+  map.on('zoomend', relabel);
   $('ground').onclick = function () {
     showGround = !showGround; store('ground', showGround ? '1' : '0');
     this.setAttribute('aria-pressed', showGround);
