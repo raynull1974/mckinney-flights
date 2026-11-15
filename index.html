@@ -766,7 +766,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
   var HOME = { lat: 33.1972, lon: -96.6398 };
   var POLL_MS = 10000;
   // Optional: your own CORS proxy (see worker.js). Leave '' to call the feeds directly.
-  var PROXY = '';
+  var PROXY = 'https://mckinney-flights-proxy.raynull.workers.dev';
   var SOURCES = [
     { name: 'adsb.fi', url: function (la, lo, r) { return 'https://opendata.adsb.fi/api/v2/lat/' + la + '/lon/' + lo + '/dist/' + r; } },
     { name: 'adsb.lol', url: function (la, lo, r) { return 'https://api.adsb.lol/v2/point/' + la + '/' + lo + '/' + r; } },
