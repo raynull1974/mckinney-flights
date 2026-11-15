@@ -18,3 +18,4 @@ Open: https://raynull1974.github.io/mckinney-flights/
 ## Weather
 - **Weather** button: NEXRAD radar ([Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/), refreshed every 5 min) plus NWS tornado, severe thunderstorm and flash flood warning polygons ([api.weather.gov](https://www.weather.gov/documentation/services-web-API), every 2 min). Tap a polygon for details.
 - A red banner appears when a tornado warning covers the map's home point, even with the weather layer off. It's a convenience, not an official alert: rely on your phone's emergency alerts and NWS.
+- **Wind** menu: model winds from [Open-Meteo](https://open-meteo.com/) (CC BY 4.0) on a 7x7 grid around home, drawn as drifting streaks (static arrows with Reduce Motion). Levels: surface, ~5k ft (850 hPa), ~10k ft (700 hPa), ~18k ft (500 hPa), ~34k ft (250 hPa). Refreshes every 30 min.

@@ -722,6 +722,9 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
 #map.stale .leaflet-marker-pane,#map.stale .leaflet-overlay-pane{opacity:.35}
 .legend{position:absolute;left:10px;top:10px;z-index:500;background:rgba(17,26,36,.88);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap;max-width:calc(100% - 20px)}
 .legend .wxkey{display:none}
+.legend .windkey{display:none;color:var(--ink)}
+.legend.windon .windkey{display:flex}
+.windpane canvas{pointer-events:none}
 .legend.wx .wxkey{display:flex}
 .legend b.warn{background:none;border:2px solid;width:11px;height:11px}
 #wxalert{display:none;position:absolute;z-index:999;left:50%;transform:translateX(-50%);top:10px;width:max-content;max-width:calc(100% - 20px);background:var(--red);color:#fff;font:600 15px/1.3 Barlow,sans-serif;padding:8px 14px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.5);text-align:center}
@@ -764,6 +767,14 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   <button id="ground" aria-pressed="false">Ground</button>
   <button id="nearme" aria-pressed="false">Near me</button>
   <button id="wx" aria-pressed="false">Weather</button>
+  <select id="wind" aria-label="Wind">
+   <option value="">Wind off</option>
+   <option value="10m">Wind: surface</option>
+   <option value="850hPa">Wind: 5k ft</option>
+   <option value="700hPa">Wind: 10k ft</option>
+   <option value="500hPa">Wind: 18k ft</option>
+   <option value="250hPa">Wind: 34k ft</option>
+  </select>
  </header>
  <div id="stage">
   <div id="map">
@@ -835,7 +846,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   $('labels').setAttribute('aria-pressed', showLabels);
   $('ground').setAttribute('aria-pressed', showGround);
   $('legend').innerHTML = BANDS.map(function (b) { return '<span><b style="background:' + b.c + '"></b>' + b.t + '</span>'; }).join('') + '<span><b class="milkey"></b>Military</span>' +
-    '<span class="wxkey"><b class="warn" style="border-color:#ff3b3b"></b>Tornado warning</span><span class="wxkey"><b class="warn" style="border-color:#ffd23f"></b>Severe storm</span><span class="wxkey"><b class="warn" style="border-color:#3ddc84"></b>Flash flood</span>';
+    '<span class="windkey" id="windkey"></span><span class="wxkey"><b class="warn" style="border-color:#ff3b3b"></b>Tornado warning</span><span class="wxkey"><b class="warn" style="border-color:#ffd23f"></b>Severe storm</span><span class="wxkey"><b class="warn" style="border-color:#3ddc84"></b>Flash flood</span>';
 
   var map = L.map('map', { zoomControl: false });
   map.attributionControl.setPrefix(false);
@@ -1095,6 +1106,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   $('radius').onchange = function () {
     radius = +this.value; store('radius', radius);
     ring.setRadius(radius * 1852);
+    if (windLevel) { windGrid = null; loadWind(); }
     map.fitBounds(ring.getBounds(), { padding: [10, 10] });
     clearTimeout(window._skiesT); window._skiesT = setTimeout(pollOnce, 50);
   };
@@ -1140,6 +1152,7 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
     $('title').textContent = 'Over ' + (name || 'you');
     clearPlanes();
     if (typeof showWarnings === 'function' && lastWarn) showWarnings();
+    if (typeof windLevel === 'string' && windLevel) { windGrid = null; loadWind(); }
     map.fitBounds(ring.getBounds(), { padding: [10, 10] });
     clearTimeout(window._skiesT); window._skiesT = setTimeout(pollOnce, 50);
   }
@@ -1256,6 +1269,106 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   setInterval(function () { if (showWx) radar.setUrl(radarUrl()); }, 300000);
   setInterval(loadWarnings, 120000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { loadWarnings(); if (showWx) radar.setUrl(radarUrl()); } });
+
+  // ---- Wind: Open-Meteo model winds on a 7x7 grid around home, drawn as drifting streaks. ----
+  // Levels: 10 m above ground, or pressure levels near 5k / 10k / 18k / 34k ft so you can match what the planes fly through.
+  var windLevel = store('wind') || '';
+  var WIND_N = 7, windGrid = null, windTimer = null;
+  map.createPane('windpane'); map.getPane('windpane').style.zIndex = 450; map.getPane('windpane').classList.add('windpane');
+  var wc = L.DomUtil.create('canvas', '', map.getPane('windpane')), wctx = wc.getContext('2d');
+  var parts = [], anim = null, nodes = null;
+  var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function windBounds() { return ring.getBounds().pad(0.6); }
+  function loadWind() {
+    if (!windLevel || document.hidden) return;
+    var b = windBounds(), la = [], lo = [], lvl = windLevel;
+    for (var i = 0; i < WIND_N; i++) for (var j = 0; j < WIND_N; j++) {
+      la.push((b.getNorth() - (b.getNorth() - b.getSouth()) * i / (WIND_N - 1)).toFixed(2));
+      lo.push((b.getWest() + (b.getEast() - b.getWest()) * j / (WIND_N - 1)).toFixed(2));
+    }
+    var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + la.join(',') + '&longitude=' + lo.join(',') +
+      '&hourly=wind_speed_' + lvl + ',wind_direction_' + lvl + '&forecast_hours=1&wind_speed_unit=kn&timezone=GMT';
+    fetchJSON(url, 15000).then(function (j) {
+      if (lvl !== windLevel) return;
+      var arr = Array.isArray(j) ? j : [j];
+      var g = arr.map(function (r) {
+        var s = r.hourly['wind_speed_' + lvl][0], d = r.hourly['wind_direction_' + lvl][0];
+        if (s == null || d == null) return { u: 0, v: 0, s: 0, d: 0 };
+        return { u: -s * Math.sin(d * Math.PI / 180), v: -s * Math.cos(d * Math.PI / 180), s: s, d: d };   // wind blows FROM d
+      });
+      if (g.length !== WIND_N * WIND_N) return;
+      windGrid = { b: b, g: g };
+      var c = g[Math.floor(g.length / 2)];
+      $('windkey').textContent = 'Wind ' + $('wind').selectedOptions[0].textContent.replace('Wind: ', '') + ' here: from ' + compass(c.d) + ' ' + Math.round(c.s) + ' kt';
+      placeWind(); startWind();
+    }).catch(function () { $('windkey').textContent = 'Wind data unavailable'; });
+  }
+  function placeWind() {
+    var size = map.getSize();
+    L.DomUtil.setPosition(wc, map.containerPointToLayerPoint([0, 0]));
+    if (wc.width !== size.x * 2) { wc.width = size.x * 2; wc.height = size.y * 2; wc.style.width = size.x + 'px'; wc.style.height = size.y + 'px'; }
+    wctx.setTransform(2, 0, 0, 2, 0, 0); wctx.clearRect(0, 0, size.x, size.y);
+    if (!windGrid) return;
+    var nw = map.latLngToContainerPoint(windGrid.b.getNorthWest()), se = map.latLngToContainerPoint(windGrid.b.getSouthEast());
+    nodes = { x0: nw.x, y0: nw.y, x1: se.x, y1: se.y };
+    parts = [];
+    var n = Math.min(900, Math.round(size.x * size.y / 900));
+    for (var i = 0; i < n; i++) parts.push(spawn({}));
+    if (calm) drawArrows();
+  }
+  function sample(x, y) {
+    var fx = (x - nodes.x0) / (nodes.x1 - nodes.x0) * (WIND_N - 1), fy = (y - nodes.y0) / (nodes.y1 - nodes.y0) * (WIND_N - 1);
+    if (fx < 0 || fy < 0 || fx > WIND_N - 1 || fy > WIND_N - 1) return null;
+    var i = Math.min(Math.floor(fy), WIND_N - 2), j = Math.min(Math.floor(fx), WIND_N - 2), ty = fy - i, tx = fx - j, g = windGrid.g;
+    function at(r, c) { return g[r * WIND_N + c]; }
+    var a = at(i, j), b2 = at(i, j + 1), c = at(i + 1, j), d = at(i + 1, j + 1);
+    return {
+      u: (a.u * (1 - tx) + b2.u * tx) * (1 - ty) + (c.u * (1 - tx) + d.u * tx) * ty,
+      v: (a.v * (1 - tx) + b2.v * tx) * (1 - ty) + (c.v * (1 - tx) + d.v * tx) * ty
+    };
+  }
+  function spawn(p) { var s = map.getSize(); p.x = Math.random() * s.x; p.y = Math.random() * s.y; p.age = Math.floor(Math.random() * 80); return p; }
+  function frame() {
+    anim = null;
+    if (!windLevel || !windGrid || document.hidden || calm) return;
+    var s = map.getSize();
+    wctx.globalCompositeOperation = 'destination-in'; wctx.fillStyle = 'rgba(0,0,0,.93)'; wctx.fillRect(0, 0, s.x, s.y);
+    wctx.globalCompositeOperation = 'source-over'; wctx.lineWidth = 1.2; wctx.strokeStyle = 'rgba(220,235,255,.55)';
+    wctx.beginPath();
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i], w = sample(p.x, p.y);
+      if (!w || ++p.age > 90) { spawn(p); p.age = 0; continue; }
+      var nx = p.x + w.u * 0.045, ny = p.y - w.v * 0.045;   // knots to pixels per frame, same at every zoom
+      wctx.moveTo(p.x, p.y); wctx.lineTo(nx, ny); p.x = nx; p.y = ny;
+    }
+    wctx.stroke();
+    anim = requestAnimationFrame(frame);
+  }
+  function startWind() { if (!anim && !calm) anim = requestAnimationFrame(frame); }
+  function drawArrows() {   // reduced motion: a static arrow per grid node instead of moving streaks
+    if (!windGrid) return;
+    wctx.strokeStyle = 'rgba(220,235,255,.8)'; wctx.lineWidth = 1.5;
+    windGrid.g.forEach(function (w, k) {
+      var x = nodes.x0 + (nodes.x1 - nodes.x0) * (k % WIND_N) / (WIND_N - 1), y = nodes.y0 + (nodes.y1 - nodes.y0) * Math.floor(k / WIND_N) / (WIND_N - 1);
+      var len = Math.min(30, 6 + w.s * 0.4), a = Math.atan2(-w.v, w.u), ex = x + Math.cos(a) * len, ey = y + Math.sin(a) * len;
+      wctx.beginPath(); wctx.moveTo(x, y); wctx.lineTo(ex, ey);
+      wctx.lineTo(ex - Math.cos(a - .5) * 6, ey - Math.sin(a - .5) * 6); wctx.moveTo(ex, ey); wctx.lineTo(ex - Math.cos(a + .5) * 6, ey - Math.sin(a + .5) * 6); wctx.stroke();
+    });
+  }
+  function setWind(lvl) {
+    windLevel = lvl; store('wind', lvl); $('wind').value = lvl;
+    $('legend').classList.toggle('windon', !!lvl);
+    map.attributionControl[lvl ? 'addAttribution' : 'removeAttribution']('Wind: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0)');
+    windGrid = null; if (anim) { cancelAnimationFrame(anim); anim = null; }
+    placeWind();
+    clearInterval(windTimer);
+    if (lvl) { $('windkey').textContent = 'Loading wind…'; loadWind(); windTimer = setInterval(loadWind, 1800000); }
+  }
+  map.on('movestart zoomstart', function () { if (anim) { cancelAnimationFrame(anim); anim = null; } wctx.clearRect(0, 0, wc.width, wc.height); });
+  map.on('moveend zoomend resize', function () { if (windLevel && windGrid) { placeWind(); startWind(); } });
+  $('wind').onchange = function () { setWind(this.value); };
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && windLevel) startWind(); });
+  setWind(windLevel);
 
   // ---- Self-update: a home-screen web app resumes the old page instead of reloading. ----
   // When the app comes back to the foreground (and every 15 min), fetch the live page and
