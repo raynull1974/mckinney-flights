@@ -715,6 +715,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
 .plane .lbl{position:absolute;left:26px;top:-2px;font:600 13px/1.1 "Barlow Condensed",sans-serif;color:var(--ink);text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap;pointer-events:none}
 .plane .lbl i{font-style:normal;color:var(--dim);font-weight:500}
 .plane.sel svg{filter:drop-shadow(0 0 6px #fff)}
+#map.stale .leaflet-marker-pane,#map.stale .leaflet-overlay-pane{opacity:.35}
 .legend{position:absolute;left:10px;top:10px;z-index:500;background:rgba(17,26,36,.88);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap;max-width:calc(100% - 20px)}
 .legend span{display:flex;align-items:center;gap:4px;white-space:nowrap}
 .legend b{width:10px;height:10px;border-radius:2px;display:inline-block}
@@ -797,6 +798,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
   var srcIdx = 0;
   var lastOk = 0;
   var lastErr = '';
+  var primaryRetryAt = 0;
 
   var $ = function (id) { return document.getElementById(id); };
   window.addEventListener('error', function (e) { setStatus('Page error: ' + (e.message || 'unknown'), true); });
@@ -850,7 +852,26 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
     if (emergency(ac)) return true;
     return (!onGround(ac) && altNum(ac) >= LOW_ALT) || map.getZoom() >= LABEL_ZOOM;
   }
-  function relabel() { Object.keys(planes).forEach(function (h) { planes[h].m.setIcon(icon(planes[h].ac)); }); }
+  function relabel() { Object.keys(planes).forEach(function (h) { planes[h].m.setIcon(icon(planes[h].ac)); }); declutter(); }
+
+  // Where two labels would overlap, keep the one nearer home. Selected and emergency planes always keep theirs.
+  function declutter() {
+    var placed = [];
+    function rank(ac) { return selected === ac.hex ? 0 : (emergency(ac) ? 1 : 2); }
+    Object.keys(planes).map(function (h) { return planes[h]; }).sort(function (a, b) {
+      return rank(a.ac) - rank(b.ac) || a.ac.d - b.ac.d;
+    }).forEach(function (p) {
+      var el = p.m.getElement && p.m.getElement();
+      var lbl = el && el.querySelector('.lbl');
+      if (!lbl) return;
+      var pt = map.latLngToLayerPoint(p.m.getLatLng());
+      var w = lbl.offsetWidth || (7 * Math.max(cs(p.ac).length, altShort(p.ac).length) + 4);
+      var box = [pt.x + 13, pt.y - 15, pt.x + 13 + w, pt.y + 15];
+      var keep = rank(p.ac) < 2 || !placed.some(function (q) { return box[0] < q[2] && q[0] < box[2] && box[1] < q[3] && q[1] < box[3]; });
+      lbl.style.display = keep ? '' : 'none';
+      if (keep) placed.push(box);
+    });
+  }
 
   var PATH = 'M12 1.5c.8 0 1.3.7 1.3 1.6v5.8l8 4.7v2.1l-8-2.5v5l2.3 1.7v1.6L12 20.4l-3.6 1.1v-1.6l2.3-1.7v-5l-8 2.5v-2.1l8-4.7V3.1c0-.9.5-1.6 1.3-1.6z';
   function icon(ac) {
@@ -889,6 +910,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
       delete planes[hex];
       if (selected === hex) select(null);
     });
+    declutter();
     renderList();
     if (selected) renderDetail();
   }
@@ -903,7 +925,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
     if (!arr.length) { $('list').innerHTML = '<div class="empty">No planes within ' + radius + ' nm right now.</div>'; return; }
     $('list').innerHTML = arr.map(function (ac) {
       var tags = (emergency(ac) ? '<span class="tag em">' + esc(ac.squawk || 'EMERG') + '</span>' : '') + ((ac.dbFlags & 1) ? '<span class="tag">Military</span>' : '');
-      return '<div class="row' + (selected === ac.hex ? ' sel' : '') + '" data-hex="' + ac.hex + '">' +
+      return '<div class="row' + (selected === ac.hex ? ' sel' : '') + '" data-hex="' + esc(ac.hex) + '">' +
         '<span class="dot" style="background:' + color(ac) + '"></span>' +
         '<div><div class="cs">' + esc(cs(ac)) + tags + '</div><div class="sub">' + esc(ac.t || 'Unknown type') + (routes[cs(ac)] ? ' · ' + esc(routes[cs(ac)]) : '') + '</div></div>' +
         '<div class="num">' + altText(ac) + '<div class="sub">' + ac.d.toFixed(1) + ' nm ' + compass(ac.b) + '</div></div></div>';
@@ -922,6 +944,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
     var prev = selected;
     selected = hex;
     [prev, hex].forEach(function (h) { if (h && planes[h]) planes[h].m.setIcon(icon(planes[h].ac)); });
+    declutter();
     renderDetail();
     renderList();
     if (hex && planes[hex]) lookupRoute(cs(planes[hex].ac));
@@ -948,7 +971,7 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
       '<div><dt>From you</dt><dd>' + ac.d.toFixed(1) + ' nm ' + compass(ac.b) + '</dd></div>' +
       '<div><dt>Squawk</dt><dd>' + esc(ac.squawk || '—') + '</dd></div>' +
       '</dl>' +
-      '<a href="https://adsb.lol/?icao=' + ac.hex + '" target="_blank" rel="noopener">Open in adsb.lol</a>';
+      '<a href="https://adsb.lol/?icao=' + encodeURIComponent(ac.hex) + '" target="_blank" rel="noopener">Open in adsb.lol</a>';
     $('close').onclick = function () { select(null); };
   }
 
@@ -976,16 +999,20 @@ aside{border-left:1px solid var(--line);background:var(--panel);display:flex;fle
 
   function poll() {
     if (document.hidden) { setTimeout(poll, POLL_MS); return; }
-    var tryIdx = srcIdx;
+    // Go back to the first source (the proxy) once a minute instead of staying on a fallback for good.
+    var tryIdx = (srcIdx !== 0 && Date.now() >= primaryRetryAt) ? 0 : srcIdx;
     function attempt(n) {
       var s = SOURCES[tryIdx];
+      if (tryIdx === 0) primaryRetryAt = Date.now() + 60000;
       return fetchJSON(s.url(HOME.lat, HOME.lon, radius), 8000).then(function (j) {
         srcIdx = tryIdx; lastOk = Date.now();
+        $('map').classList.remove('stale');
         update(j.ac || j.aircraft || []);
         setStatus('Updated ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) + ' · ' + s.name, false);
       }).catch(function (e) {
         lastErr = (e && e.message) || String(e);
         if (n + 1 < SOURCES.length) { tryIdx = (tryIdx + 1) % SOURCES.length; return attempt(n + 1); }
+        if (lastOk && Date.now() - lastOk > 60000) $('map').classList.add('stale');
         setStatus(lastOk ? 'Feed unreachable, showing last known positions' : "Can't reach flight feeds (" + (lastErr || 'blocked') + '), retrying', true);
       });
     }
