@@ -703,6 +703,10 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
 .tag{font:500 12px/1.4 Barlow,sans-serif;padding:1px 6px;border-radius:4px;background:#2a3a4a;color:var(--ink);margin-left:8px;vertical-align:6px}
 .tag.em{background:var(--red)}
 .plane{background:none;border:0}
+.apt{background:none;border:0;pointer-events:none}
+.apt svg{display:block}
+.apt span{position:absolute;left:24px;top:1px;font:600 14px/1 "Barlow Condensed",sans-serif;color:#cfd8e2;letter-spacing:.04em;text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap}
+.apt.minor span{font-size:12px;color:var(--dim);left:18px;top:0}
 .plane svg{display:block;transition:transform .6s linear}
 .plane .lbl{position:absolute;left:26px;top:-2px;font:600 13px/1.1 "Barlow Condensed",sans-serif;color:var(--ink);text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap;pointer-events:none}
 .plane .lbl i{font-style:normal;color:var(--dim);font-weight:500}
@@ -763,6 +767,12 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
     { name: 'adsb.lol', url: function (la, lo, r) { return 'https://api.adsb.lol/v2/point/' + la + '/' + lo + '/' + r; } },
     { name: 'airplanes.live', url: function (la, lo, r) { return 'https://api.airplanes.live/v2/point/' + la + '/' + lo + '/' + r; } }
   ];
+  // Airports to mark. major: bigger marker and label.
+  var AIRPORTS = [
+    { id: 'DFW', lat: 32.8968, lon: -97.0380, major: true },
+    { id: 'DAL', lat: 32.8471, lon: -96.8518, major: true },
+    { id: 'TKI', lat: 33.1774, lon: -96.5905, major: false }
+  ];
   var BANDS = [
     { max: 0, c: '#7d8a96', t: 'Ground' },
     { max: 2000, c: '#ff6b3d', t: '<2k' },
@@ -807,6 +817,17 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
   L.circleMarker([HOME.lat, HOME.lon], { radius: 5, color: '#fff', weight: 2, fillColor: '#ffb020', fillOpacity: 1 }).addTo(map);
   var ring = L.circle([HOME.lat, HOME.lon], { radius: radius * 1852, color: '#ffb020', weight: 1, opacity: .45, dashArray: '4 6', fill: false, interactive: false }).addTo(map);
   map.fitBounds(ring.getBounds(), { padding: [10, 10] });
+  AIRPORTS.forEach(function (a) {
+    var s = a.major ? 20 : 14;
+    L.marker([a.lat, a.lon], {
+      interactive: false, keyboard: false, zIndexOffset: -1000,
+      icon: L.divIcon({
+        className: 'apt' + (a.major ? '' : ' minor'), iconSize: [s, s], iconAnchor: [s / 2, s / 2],
+        html: '<svg viewBox="0 0 20 20" width="' + s + '" height="' + s + '"><circle cx="10" cy="10" r="8.5" fill="#0b1118" stroke="#cfd8e2" stroke-width="1.6"/>' +
+          '<path d="M7.5 4.5v11M12.5 4.5v11" stroke="#cfd8e2" stroke-width="2.2" stroke-linecap="round"/></svg><span>' + a.id + '</span>'
+      })
+    }).addTo(map);
+  });
   map.on('click', function () { select(null); });
   L.DomEvent.disableClickPropagation($('detail'));
   L.DomEvent.disableScrollPropagation($('detail'));
