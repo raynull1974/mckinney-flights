@@ -1,0 +1,7 @@
+{
+  // CORS proxy for the flight map. Deployed by Cloudflare Workers Builds on push to main.
+  "name": "mckinney-flights-proxy",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true
+}
