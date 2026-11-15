@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Skies">
 <meta name="theme-color" content="#0b1118">
 <title>McKinney skies</title>
 <style>/* Leaflet 1.9.4, BSD-2-Clause */
@@ -1123,6 +1126,33 @@ select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-o
     useMe(+store('me.lat'), +store('me.lon'));   // last known spot right away
     locate(true);                                  // then refresh it without nagging
   }
+
+  // ---- Self-update: a home-screen web app resumes the old page instead of reloading. ----
+  // When the app comes back to the foreground (and every 15 min), fetch the live page and
+  // reload if it changed. A cache-busting query skips Safari's HTTP cache.
+  (function () {
+    var base = null;
+    // The app is the last inline script on the page. (Never write the closing tag literally in here.)
+    function scriptOf(html) { var open = '<scr' + 'ipt>', i = html.lastIndexOf(open), j = html.indexOf('<\/scr' + 'ipt>', i); return i < 0 || j < 0 ? '' : html.slice(i + open.length, j); }
+    var mine = document.scripts[document.scripts.length - 1].textContent;
+    var u = new URL(location.href);
+    if (u.searchParams.has('v')) { u.searchParams.delete('v'); history.replaceState(null, '', u.pathname + u.search + u.hash); }
+    function reload() {
+      try { if (Date.now() - (+sessionStorage.getItem('skies.reloaded') || 0) < 300000) return; sessionStorage.setItem('skies.reloaded', Date.now()); } catch (e) {}
+      var r = new URL(location.href); r.searchParams.set('v', Date.now()); location.replace(r.href);
+    }
+    function check() {
+      if (document.hidden || selected) return;   // don't yank the page while someone is reading a plane card
+      fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : null; }).then(function (html) {
+        if (!html) return;
+        if (base === null) { base = html; if (mine && scriptOf(html) && scriptOf(html) !== mine) reload(); return; }
+        if (html !== base) reload();
+      }).catch(function () {});
+    }
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) check(); });
+    setInterval(check, 900000);
+    setTimeout(check, 5000);
+  })();
 
   poll();
 }
