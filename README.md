@@ -14,3 +14,7 @@ Open: https://raynull1974.github.io/mckinney-flights/
 - **Near me** uses the browser's location (rounded to about 1 km before it's sent to the flight feeds). The choice is remembered on that device.
 - Share a fixed spot with a link: `?lat=32.78&lon=-96.80&name=Downtown%20Dallas`
 - Place names come from OpenStreetMap Nominatim.
+
+## Weather
+- **Weather** button: NEXRAD radar ([Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/), refreshed every 5 min) plus NWS tornado, severe thunderstorm and flash flood warning polygons ([api.weather.gov](https://www.weather.gov/documentation/services-web-API), every 2 min). Tap a polygon for details.
+- A red banner appears when a tornado warning covers the map's home point, even with the weather layer off. It's a convenience, not an official alert: rely on your phone's emergency alerts and NWS.
